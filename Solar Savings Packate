@@ -1,0 +1,227 @@
+###############################################################
+# SOLAR ENERGY SAVINGS TRACKER
+# Enphase Envoy + ComEd Hourly Pricing
+###############################################################
+
+template:
+  - sensor:
+
+      # --- Current ComEd price in dollars - 5 min (for live gauge/display only) ---
+      - name: "ComEd Price Dollars"
+        unique_id: comed_price_dollars
+        unit_of_measurement: "$/kWh"
+        state_class: measurement
+        state: >
+          {{ (states('sensor.comed_five_minute_price') | float(0) / 100) | round(4) }}
+        availability: >
+          {{ states('sensor.comed_five_minute_price') not in ['unavailable','unknown','none'] }}
+
+      # --- ComEd hourly average in dollars (matches actual billed rate) ---
+      - name: "ComEd Hourly Avg Dollars"
+        unique_id: comed_hourly_avg_dollars
+        unit_of_measurement: "$/kWh"
+        state_class: measurement
+        state: >
+          {{ (states('sensor.comed_current_hour_avg') | float(0) / 100) | round(4) }}
+        availability: >
+          {{ states('sensor.comed_current_hour_avg') not in ['unavailable','unknown','none'] }}
+
+      # --- Solar production in kW (Envoy already reports in kW) ---
+      - name: "Solar Production kW"
+        unique_id: solar_production_kw
+        unit_of_measurement: "kW"
+        state_class: measurement
+        device_class: power
+        state: >
+          {{ states('sensor.envoy_202332019382_current_power_production') | float(0) | round(3) }}
+        availability: >
+          {{ states('sensor.envoy_202332019382_current_power_production') not in ['unavailable','unknown','none'] }}
+
+      # --- Grid export in kW (CT power minus consumption, clamped to 0) ---
+      - name: "Grid Export kW"
+        unique_id: grid_export_kw
+        unit_of_measurement: "kW"
+        state_class: measurement
+        device_class: power
+        state: >
+          {% set ct = states('sensor.envoy_production_ct_power') | float(0) %}
+          {% set consumption = states('sensor.envoy_202332019382_current_power_consumption') | float(0) %}
+          {{ [ct - consumption, 0] | max | round(3) }}
+
+      # --- Grid import in kW (net consumption, clamped to 0, already in kW) ---
+      - name: "Grid Import kW"
+        unique_id: grid_import_kw
+        unit_of_measurement: "kW"
+        state_class: measurement
+        device_class: power
+        state: >
+          {% set net = states('sensor.envoy_202332019382_current_net_power_consumption') | float(0) %}
+          {{ [net, 0] | max | round(3) }}
+
+      # --- Self-consumed solar (min of production and consumption, both already in kW) ---
+      - name: "Solar Self Consumption kW"
+        unique_id: solar_self_consumption_kw
+        unit_of_measurement: "kW"
+        state_class: measurement
+        device_class: power
+        state: >
+          {% set production = states('sensor.envoy_202332019382_current_power_production') | float(0) %}
+          {% set consumption = states('sensor.envoy_202332019382_current_power_consumption') | float(0) %}
+          {{ [production, consumption] | min | round(3) }}
+
+      # --- Current savings RATE from self-consumed solar ($) uses hourly avg for billing accuracy ---
+      - name: "Solar Self Consumption Savings Rate"
+        unique_id: solar_self_consumption_savings_rate
+        unit_of_measurement: "$"
+        state_class: measurement
+        state: >
+          {% set self_kw = states('sensor.solar_self_consumption_kw') | float(0) %}
+          {% set price = states('sensor.comed_hourly_avg_dollars') | float(0) %}
+          {{ (self_kw * price) | round(5) }}
+
+      # --- Current value of solar exported to grid ($) ---
+      - name: "Solar Export Value Rate"
+        unique_id: solar_export_value_rate
+        unit_of_measurement: "$"
+        state_class: measurement
+        state: >
+          {% set export_kw = states('sensor.grid_export_kw') | float(0) %}
+          {% set price = states('sensor.comed_hourly_avg_dollars') | float(0) %}
+          {{ (export_kw * price) | round(5) }}
+
+      # --- Total solar value rate (self-use + export) ---
+      - name: "Solar Total Value Rate"
+        unique_id: solar_total_value_rate
+        unit_of_measurement: "$"
+        state_class: measurement
+        state: >
+          {% set self_rate = states('sensor.solar_self_consumption_savings_rate') | float(0) %}
+          {% set export_rate = states('sensor.solar_export_value_rate') | float(0) %}
+          {{ (self_rate + export_rate) | round(5) }}
+
+      # --- Current grid cost rate (what you'd pay if no solar) ---
+      - name: "Grid Cost Rate"
+        unique_id: grid_cost_rate
+        unit_of_measurement: "$"
+        state_class: measurement
+        state: >
+          {% set import_kw = states('sensor.grid_import_kw') | float(0) %}
+          {% set price = states('sensor.comed_hourly_avg_dollars') | float(0) %}
+          {{ (import_kw * price) | round(5) }}
+
+      # --- Peak hours binary (ComEd typical peak 2pm-7pm weekdays) ---
+      - name: "ComEd Peak Hours"
+        unique_id: comed_peak_hours
+        state: >
+          {% set h = now().hour %}
+          {% set weekday = now().weekday() %}
+          {{ weekday < 5 and h >= 14 and h < 19 }}
+        icon: >
+          {{ 'mdi:lightning-bolt' if this.state == 'true' else 'mdi:lightning-bolt-outline' }}
+
+      # --- Price tier label for dashboard display ---
+      - name: "ComEd Price Tier"
+        unique_id: comed_price_tier
+        state: >
+          {% set p = states('sensor.comed_five_minute_price') | float(0) %}
+          {% if p < 3 %}
+            Low
+          {% elif p < 7 %}
+            Moderate
+          {% elif p < 12 %}
+            High
+          {% else %}
+            Very High
+          {% endif %}
+        icon: >
+          {% set p = states('sensor.comed_five_minute_price') | float(0) %}
+          {% if p < 3 %}mdi:arrow-down-circle
+          {% elif p < 7 %}mdi:minus-circle
+          {% elif p < 12 %}mdi:arrow-up-circle
+          {% else %}mdi:alert-circle{% endif %}
+
+
+# ─────────────────────────────────────────────────────────────
+# 2. RIEMANN SUM INTEGRATIONS
+# ─────────────────────────────────────────────────────────────
+sensor:
+  - platform: integration
+    source: sensor.solar_self_consumption_savings_rate
+    name: "Solar Self Consumption Savings"
+    unique_id: solar_self_consumption_savings_integrated
+    unit_prefix: ~
+    unit_time: h
+    method: trapezoidal
+    round: 4
+
+  - platform: integration
+    source: sensor.solar_export_value_rate
+    name: "Solar Export Value"
+    unique_id: solar_export_value_integrated
+    unit_prefix: ~
+    unit_time: h
+    method: trapezoidal
+    round: 4
+
+  - platform: integration
+    source: sensor.solar_total_value_rate
+    name: "Solar Total Value"
+    unique_id: solar_total_value_integrated
+    unit_prefix: ~
+    unit_time: h
+    method: trapezoidal
+    round: 4
+
+  - platform: integration
+    source: sensor.grid_cost_rate
+    name: "Grid Cost Running"
+    unique_id: grid_cost_running_integrated
+    unit_prefix: ~
+    unit_time: h
+    method: trapezoidal
+    round: 4
+
+# ─────────────────────────────────────────────────────────────
+# 3. UTILITY METERS
+# ─────────────────────────────────────────────────────────────
+utility_meter:
+
+  solar_self_savings_daily:
+    source: sensor.solar_self_consumption_savings
+    name: "Solar Self Savings Today"
+    cycle: daily
+
+  solar_self_savings_monthly:
+    source: sensor.solar_self_consumption_savings
+    name: "Solar Self Savings This Month"
+    cycle: monthly
+
+  solar_export_value_daily:
+    source: sensor.solar_export_value
+    name: "Solar Export Value Today"
+    cycle: daily
+
+  solar_export_value_monthly:
+    source: sensor.solar_export_value
+    name: "Solar Export Value This Month"
+    cycle: monthly
+
+  solar_total_value_daily:
+    source: sensor.solar_total_value
+    name: "Solar Total Value Today"
+    cycle: daily
+
+  solar_total_value_monthly:
+    source: sensor.solar_total_value
+    name: "Solar Total Value This Month"
+    cycle: monthly
+
+  grid_cost_daily:
+    source: sensor.grid_cost_running
+    name: "Grid Cost Today"
+    cycle: daily
+
+  grid_cost_monthly:
+    source: sensor.grid_cost_running
+    name: "Grid Cost This Month"
+    cycle: monthly
