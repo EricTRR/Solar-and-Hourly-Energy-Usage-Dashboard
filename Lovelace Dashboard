@@ -1,0 +1,125 @@
+views:
+    - title: Solar Savings
+      icon: mdi:solar-power
+      path: solar-savings
+      badges: []
+      cards:
+
+        # ── ROW 1: Live Status ──────────────────────────────────
+        - type: vertical-stack
+          cards:
+
+            - type: tile
+              entity: sensor.solar_production_kw
+              name: "☀️ Solar Now"
+              color: amber
+              icon: mdi:solar-power-variant
+
+            - type: tile
+              entity: sensor.solar_self_consumption_kw
+              name: "🏠 Self Using"
+              color: green
+              icon: mdi:home-lightning-bolt
+
+            - type: tile
+              entity: sensor.grid_export_kw
+              name: "⚡ Exporting"
+              color: cyan
+              icon: mdi:transmission-tower-export
+
+            - type: tile
+              entity: sensor.grid_import_kw
+              name: "🔌 Grid Draw"
+              color: red
+              icon: mdi:transmission-tower-import
+
+        # ── ROW 2: ComEd Price + Tier ───────────────────────────
+        - type: vertical-stack
+          cards:
+
+            - type: sensor
+              entity: sensor.comed_five_minute_price
+              name: "ComEd 5 Min Price (¢/kwhh)"
+              graph: none
+              hours_to_show: 24
+
+            - type: tile
+              entity: sensor.comed_price_tier
+              name: "Price Tier"
+              icon: mdi:tag
+
+            - type: tile
+              entity: sensor.comed_peak_hours
+              name: "Peak Hours"
+              icon: mdi:clock-alert
+
+            - type: sensor
+              entity: sensor.comed_current_hour_avg
+              name: "ComEd Hour Avg Price (¢/kwhh)"
+              graph: none
+              hours_to_show: 24
+
+        # ── ROW 3: Today's $$ Totals ────────────────────────────
+        - type: vertical-stack
+          cards:
+
+            - type: entity
+              entity: sensor.solar_self_savings_today
+              name: "🏠 Saved Today (Self Use)"
+
+            - type: entity
+              entity: sensor.solar_export_value_today
+              name: "⚡ Earned Today (Export)"
+
+            - type: entity
+              entity: sensor.solar_total_value_today
+              name: "💰 Total Value Today"
+
+            - type: entity
+              entity: sensor.grid_cost_today
+              name: "🔌 Grid Cost Today"
+
+        # ── ROW 4: This Month's $$ Totals ──────────────────────
+        - type: vertical-stack
+          cards:
+
+            - type: entity
+              entity: sensor.solar_self_savings_this_month
+              name: "🏠 Saved Month (Self Use)"
+
+            - type: entity
+              entity: sensor.solar_export_value_this_month
+              name: "⚡ Earned Month (Export)"
+
+            - type: entity
+              entity: sensor.solar_total_value_this_month
+              name: "💰 Total Value MTD"
+
+            - type: entity
+              entity: sensor.grid_cost_this_month
+              name: "🔌 Grid Cost MTD"
+
+        # ── ROW 5: Live Rate History Graph ──────────────────────
+        - type: history-graph
+          title: "Live Savings Rate vs. ComEd Price (Today)"
+          hours_to_show: 24
+          entities:
+            - entity: sensor.solar_total_value_rate
+              name: "Solar Value $"
+            - entity: sensor.comed_price_dollars
+              name: "ComEd $/kwhh"
+            - entity: sensor.grid_cost_rate
+              name: "Grid Cost $"
+        # ── ROW 6: Power Flow History ───────────────────────────
+        - type: history-graph
+          title: "Power Flow (kwh)"
+          hours_to_show: 24
+          entities:
+            - entity: sensor.solar_production_kw
+              name: "☀️ Production"
+            - entity: sensor.solar_self_consumption_kw
+              name: "🏠 Self Use"
+            - entity: sensor.grid_export_kw
+              name: "⚡ Export"
+            - entity: sensor.grid_import_kw
+              name: "🔌 Import"
